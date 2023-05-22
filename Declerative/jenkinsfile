@@ -1,0 +1,61 @@
+pipeline {
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins: worker
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["/busybox/cat"]
+    tty: true
+    volumeMounts:
+      - name: dockercred
+        mountPath: /root/.docker/
+  - name: kubectl
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["cat"]
+    tty: true
+  - name: multitool
+    image: praqma/network-multitool:latest
+    command: ["cat"]
+    tty: true
+  volumes:
+  - name: dockercred
+    secret:
+      secretName: dockercred
+"""
+    }
+  }
+  stages {
+    stage('Stage 1: Build with Kaniko') {
+      steps {
+        container('kaniko') {
+          sh '/kaniko/executor --context=git://github.com/ahirshberg/goPlay.git \
+                  --destination=docker.io/cics89/hirshcorp:latest \
+                  --insecure \
+                  --skip-tls-verify  \
+                  -v=debug'
+        }
+      }
+    }
+    stage('Stage 2: Run kubectl') {
+      steps {
+        container('kubectl') {
+          sh  'kubectl apply -f https://raw.githubusercontent.com/ahirshberg/CNR-examples/master/wepapp-deployment.yaml -n test'
+        }
+      }
+    }
+    stage('Stage 3: test app readiness') {
+      steps {
+        container('multitool') {
+          sh  'curl webapp.test.svc.cluster.local'
+        }
+      }
+    }
+  }
+}

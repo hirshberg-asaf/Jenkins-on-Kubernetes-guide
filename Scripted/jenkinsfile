@@ -1,0 +1,33 @@
+def label = "goweb-1.$BUILD_NUMBER-pipeline"
+ 
+podTemplate(label: label, containers: [
+ containerTemplate(name: 'kubectl', image: 'lachlanevenson/k8s-kubectl:v1.8.8', command: 'cat', ttyEnabled: true),
+ containerTemplate(name: 'kaniko', image: 'gcr.io/kaniko-project/executor:debug', command: '/busybox/cat', ttyEnabled: true),
+ containerTemplate(name: 'multitool', image: 'praqma/network-multitool:latest', command: 'cat', ttyEnabled: true)
+],
+volumes: [
+   secretVolume(mountPath: '/root/.docker/', secretName: 'dockercred')
+]) {
+ node(label) {
+   stage('Stage 1: Build with Kaniko') {
+     container('kaniko') {
+       sh '/kaniko/executor --context=git://github.com/ahirshberg/goPlay.git \
+               --destination=docker.io/cics89/hirshcorp:latest \
+               --insecure \
+               --skip-tls-verify  \
+               -v=debug'
+     }
+   }
+ 
+   stage('Stage 2: Run kubectl ') {
+     container('kubectl') {
+       sh  'kubectl apply -f https://raw.githubusercontent.com/ahirshberg/CNR-examples/master/wepapp-deployment.yaml -n test'
+     }
+   }
+   stage('Stage 3: test app readiness') {
+     container('multitool') {
+       sh  'curl webapp.test.svc.cluster.local'
+     }
+   }
+ }
+}
